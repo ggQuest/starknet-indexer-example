@@ -21,14 +21,15 @@ WORKDIR /usr/src/app
 COPY --chown=node:node package.json pnpm-lock.yaml ./
 # Install app dependencies using the clean install option.
 RUN pnpm install --frozen-lockfile 
-RUN pnpm build
 
 # Bundle app source
 COPY --chown=node:node . .
+
+RUN pnpm build
 
 EXPOSE ${PORT}
 
 ENV NODE_ENV=production
 ENV PONDER_TELEMETRY_DISABLED=true
 
-CMD [ "pnpm", "start --indexer adventures" ]
+CMD [ "pnpm", "start", "--indexer", "adventures" ]
