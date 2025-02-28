@@ -1,0 +1,76 @@
+name: Deploy release version
+
+on:
+  push:
+    tags: "*/v[0-9]+.[0-9]+.[0-9]+"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the repo
+        uses: actions/checkout@v4
+
+      - name: Create release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create ${{ github.ref_name }} --verify-tag --generate-notes --repo ${{ github.repository }}
+
+      - name: Get environment and commit based on version tag
+        id: get_env
+        run: |
+          echo "ENV=$(echo ${{ github.ref }}|sed -E 's%refs/tags/%%g;s%/v[0-9]+.[0-9]+.[0-9]%%g')" >> $GITHUB_OUTPUT
+          echo "COMMIT=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+    outputs:
+      ENV: ${{ steps.get_env.outputs.ENV }}
+      COMMIT: ${{ steps.get_env.outputs.COMMIT }}
+
+  deploy:
+    environment: ${{ needs.release.outputs.ENV }}
+    runs-on: ubuntu-latest
+    needs: [release]
+    name: Deploy to Digital Ocean droplet
+    steps:
+      - name: Cleanup droplet
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.DROPLET_USER }}
+          password: ${{ secrets.DROPLET_PASSWORD }}
+          script: |
+            # Remove all unused containers, networks, images, volumes
+            docker system prune -af
+            # Stop all running containers
+            docker container stop ${{ secrets.IMAGE_NAME }}
+            # Remove all old containers
+            docker container rm -f ${{ secrets.IMAGE_NAME }}
+            # Remove all unused old images
+            docker image prune -af
+
+      - name: Run docker image on droplet
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.DROPLET_USER }}
+          password: ${{ secrets.DROPLET_PASSWORD }}
+          script: |
+            # Run a new container from a new image
+            docker run -d \
+            --restart unless-stopped \
+            -p ${{ secrets.PORT }}:${{ secrets.PORT }} \
+            -e NODE_ENV="production" \
+            -e GAME_ADDRESS="${{ secrets.GAME_ADDRESS }}" \
+            -e START_BLOCK="${{ secrets.START_BLOCK }}" \
+            -e API_URL="${{ secrets.API_URL }}" \
+            -e GAME_SECRET="${{ secrets.GAME_SECRET }}" \
+            --name ${{ secrets.IMAGE_NAME }} \
+            ${{ secrets.DOCKER_USERNAME }}/${{ secrets.IMAGE_NAME }}:${{ needs.release.outputs.COMMIT }}
