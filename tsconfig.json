@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "skipLibCheck": true,
+  },
+  "include": [
+    "**/*.ts",
+    ".apibara/types"
+  ],
+  "exclude": [
+    "node_modules"
+  ],
+}
